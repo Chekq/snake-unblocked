@@ -97,7 +97,8 @@ const KEYS = {
   arrowup: [0, -1], w: [0, -1], arrowdown: [0, 1], s: [0, 1],
   arrowleft: [-1, 0], a: [-1, 0], arrowright: [1, 0], d: [1, 0]
 };
-let snake, dir, queue, apple, score, timer, state = 'ready', best = 0;
+let snake, dir, queue, apple, score, state = 'ready', best = 0;
+let raf = 0, last = 0, acc = 0, prog = 0, growing = false;
 let msg = ['Snake', 'Press Space or an arrow key'];
 
 // ---------- saved data ----------
@@ -115,7 +116,27 @@ function saveSettings() {
   try { localStorage.setItem('snakeSettings', JSON.stringify(settings)); } catch (e) {}
 }
 
+// ---------- background + grid, drawn once and reused every frame ----------
+const grid = document.createElement('canvas');
+grid.width = grid.height = W;
+(function () {
+  const g = grid.getContext('2d');
+  g.fillStyle = '#161d26';
+  g.fillRect(0, 0, W, W);
+  g.strokeStyle = '#2b3645';
+  g.lineWidth = 1;
+  g.beginPath();
+  for (let i = 0; i <= N; i++) {
+    const p = Math.min(i * S + 0.5, W - 0.5);
+    g.moveTo(p, 0); g.lineTo(p, W);
+    g.moveTo(0, p); g.lineTo(W, p);
+  }
+  g.stroke();
+})();
+
 // ---------- game logic ----------
+// The game still moves one square every delay() milliseconds, but the picture
+// is redrawn every screen refresh (about 60 fps) so the snake glides smoothly.
 function delay() {
   // starts at your chosen speed and gets faster with every apple eaten
   return Math.max(MIN_MS, settings.speed - (score / 10) * RATES[settings.scale]);
@@ -127,6 +148,9 @@ function reset() {
   queue = [];
   score = 0;
   scoreEl.textContent = 0;
+  growing = false;
+  acc = 0;
+  prog = 0;
   placeApple();
 }
 
@@ -136,62 +160,71 @@ function placeApple() {
   } while (snake.some(s => s.x === apple.x && s.y === apple.y));
 }
 
-function start() {
-  clearTimeout(timer);
+function start(first) {
+  cancelAnimationFrame(raf);
   reset();
+  if (first && first.x !== -1) dir = first;   // the key you start with sets the opening direction
   state = 'running';
   msg = null;
-  draw();
-  timer = setTimeout(step, delay());
+  beginMove();
+  last = performance.now();
+  raf = requestAnimationFrame(frame);
 }
 
-function step() {
+// Pick where the head glides during the next move. Returns false on a crash.
+function beginMove() {
   if (queue.length) dir = queue.shift();
   const h = { x: snake[0].x + dir.x, y: snake[0].y + dir.y };
-  const eat = h.x === apple.x && h.y === apple.y;
-  const body = eat ? snake : snake.slice(0, -1);
+  growing = h.x === apple.x && h.y === apple.y;
+  const body = growing ? snake : snake.slice(0, -1);
   if (h.x < 0 || h.y < 0 || h.x >= N || h.y >= N || body.some(s => s.x === h.x && s.y === h.y)) {
-    return gameOver('Game Over');
+    gameOver('Game Over');
+    return false;
   }
-  snake.unshift(h);
-  if (eat) {
-    score += 10;
-    scoreEl.textContent = score;
-    if (snake.length === N * N) return gameOver('You Win!');
-    placeApple();
-  } else {
-    snake.pop();
+  return true;
+}
+
+// The head has arrived in its new square: update the snake, apple and score.
+function commit() {
+  snake.unshift({ x: snake[0].x + dir.x, y: snake[0].y + dir.y });
+  if (!growing) { snake.pop(); return; }
+  score += 10;
+  scoreEl.textContent = score;
+  if (snake.length === N * N) return gameOver('You Win!');
+  placeApple();
+}
+
+function frame(now) {
+  raf = requestAnimationFrame(frame);
+  acc += Math.max(0, Math.min(now - last, 100));   // cap so a lag spike can't make the snake jump
+  last = now;
+  let d = delay();
+  while (acc >= d) {
+    acc -= d;
+    commit();
+    if (state !== 'running' || !beginMove()) return;
+    d = delay();
   }
-  draw();
-  timer = setTimeout(step, delay());
+  draw(acc / d);
 }
 
 function gameOver(title) {
   state = 'over';
-  clearTimeout(timer);
+  cancelAnimationFrame(raf);
   if (score > best) {
     best = score;
     bestEl.textContent = best;
     try { localStorage.setItem('snakeBest', best); } catch (e) {}
   }
   msg = [title, 'Score ' + score + ' · Space to restart'];
+  prog = 0;
   redraw();
 }
 
-// ---------- drawing ----------
-function draw() {
-  // background + grid lines
-  ctx.fillStyle = '#161d26';
-  ctx.fillRect(0, 0, W, W);
-  ctx.strokeStyle = '#2b3645';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  for (let i = 0; i <= N; i++) {
-    const p = Math.min(i * S + 0.5, W - 0.5);
-    ctx.moveTo(p, 0); ctx.lineTo(p, W);
-    ctx.moveTo(0, p); ctx.lineTo(W, p);
-  }
-  ctx.stroke();
+// ---------- drawing (t = how far through the current move, 0 to 1) ----------
+function draw(t) {
+  prog = t;
+  ctx.drawImage(grid, 0, 0);
 
   // apple (circle)
   const ax = (apple.x + 0.5) * S, ay = (apple.y + 0.5) * S;
@@ -200,8 +233,21 @@ function draw() {
   ctx.fillStyle = 'rgba(255,255,255,.35)';
   ctx.beginPath(); ctx.arc(ax - S * 0.12, ay - S * 0.12, S * 0.1, 0, Math.PI * 2); ctx.fill();
 
-  // snake: one smooth rounded line through the cell centers
-  const pts = snake.map(s => ({ x: (s.x + 0.5) * S, y: (s.y + 0.5) * S }));
+  // snake: one smooth rounded line. The head slides forward and the tail slides in.
+  const c = s => ({ x: (s.x + 0.5) * S, y: (s.y + 0.5) * S });
+  const n = snake.length;
+  const h0 = c(snake[0]);
+  const hd = { x: h0.x + dir.x * S * t, y: h0.y + dir.y * S * t };
+  const pts = [hd];
+  for (let i = 0; i < n - 1; i++) pts.push(c(snake[i]));
+  const tl = c(snake[n - 1]);
+  if (growing) {
+    pts.push(tl);                                   // eating: tail stays put so the snake grows
+  } else {
+    const pr = c(snake[n - 2]);
+    pts.push({ x: tl.x + (pr.x - tl.x) * t, y: tl.y + (pr.y - tl.y) * t });
+  }
+
   const mid = (a, b) => [(a.x + b.x) / 2, (a.y + b.y) / 2];
   ctx.lineCap = ctx.lineJoin = 'round';
   ctx.lineWidth = S * 0.72;
@@ -216,7 +262,7 @@ function draw() {
   ctx.stroke();
 
   // eyes
-  const hd = pts[0], px = -dir.y, py = dir.x;
+  const px = -dir.y, py = dir.x;
   for (const side of [-1, 1]) {
     const ex = hd.x + dir.x * S * 0.12 + px * side * S * 0.2;
     const ey = hd.y + dir.y * S * 0.12 + py * side * S * 0.2;
@@ -239,7 +285,7 @@ function overlay(title, sub) {
 }
 
 function redraw() {
-  draw();
+  draw(prog);
   if (msg) overlay(msg[0], msg[1]);
 }
 
@@ -255,7 +301,7 @@ function syncPanel() {
 
 function openSettings() {
   if (panel.classList.contains('open')) return;
-  if (state === 'running') { clearTimeout(timer); state = 'paused'; }   // pause while open
+  if (state === 'running') { cancelAnimationFrame(raf); state = 'paused'; }   // pause while open
   syncPanel();
   panel.classList.add('open');
 }
@@ -264,7 +310,11 @@ function closeSettings() {
   panel.classList.remove('open');
   if (document.activeElement) document.activeElement.blur();
   redraw();
-  if (state === 'paused') { state = 'running'; timer = setTimeout(step, delay()); }
+  if (state === 'paused') {
+    state = 'running';
+    last = performance.now();
+    raf = requestAnimationFrame(frame);
+  }
 }
 
 function setColor(c) {
@@ -306,11 +356,11 @@ addEventListener('keydown', e => {
   const d = KEYS[k];
   if (!d) return;
   e.preventDefault();                               // stops arrow keys scrolling the page
-  if (state === 'ready') start();
+  if (state === 'ready') { start({ x: d[0], y: d[1] }); return; }
   if (state !== 'running') return;
-  const last = queue.length ? queue[queue.length - 1] : dir;
-  const opposite = d[0] === -last.x && d[1] === -last.y;
-  const same = d[0] === last.x && d[1] === last.y;
+  const lastDir = queue.length ? queue[queue.length - 1] : dir;
+  const opposite = d[0] === -lastDir.x && d[1] === -lastDir.y;
+  const same = d[0] === lastDir.x && d[1] === lastDir.y;
   if (queue.length < 2 && !opposite && !same) queue.push({ x: d[0], y: d[1] });
 });
 

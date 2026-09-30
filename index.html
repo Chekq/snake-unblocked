@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Snake</title>
+<style>
+  html, body { height: 100%; margin: 0; }
+  body {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background: #0f1419; color: #e6edf3; font-family: system-ui, sans-serif;
+  }
+  #hud { display: flex; justify-content: space-between; width: min(92vw, 480px); margin-bottom: 8px; font-size: 18px; }
+  canvas { width: min(92vw, 480px); height: auto; aspect-ratio: 1; border-radius: 10px; box-shadow: 0 0 0 2px #2a3441; }
+  p { opacity: .6; font-size: 14px; margin-top: 10px; }
+</style>
+</head>
+<body>
+<div id="hud">
+  <span>Score: <b id="score">0</b></span>
+  <span>Best: <b id="best">0</b></span>
+</div>
+<canvas id="c" width="480" height="480"></canvas>
+<p>Arrow keys or WASD to move · Space to start / restart</p>
+
+<script>
+const N = 20, S = 24, W = N * S;          // N = grid size, S = cell size in px
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const scoreEl = document.getElementById('score'), bestEl = document.getElementById('best');
+const KEYS = {
+  arrowup: [0, -1], w: [0, -1], arrowdown: [0, 1], s: [0, 1],
+  arrowleft: [-1, 0], a: [-1, 0], arrowright: [1, 0], d: [1, 0]
+};
+let snake, dir, queue, apple, score, timer, state = 'ready', best = 0;
+
+try { best = +localStorage.getItem('snakeBest') || 0; } catch (e) {}
+bestEl.textContent = best;
+
+function reset() {
+  snake = [{ x: 10, y: 10 }, { x: 9, y: 10 }, { x: 8, y: 10 }];
+  dir = { x: 1, y: 0 };
+  queue = [];
+  score = 0;
+  scoreEl.textContent = 0;
+  placeApple();
+}
+
+function placeApple() {
+  do {
+    apple = { x: Math.floor(Math.random() * N), y: Math.floor(Math.random() * N) };
+  } while (snake.some(s => s.x === apple.x && s.y === apple.y));
+}
+
+function start() {
+  clearTimeout(timer);
+  reset();
+  state = 'running';
+  draw();
+  timer = setTimeout(step, 130);
+}
+
+function step() {
+  if (queue.length) dir = queue.shift();
+  const h = { x: snake[0].x + dir.x, y: snake[0].y + dir.y };
+  const eat = h.x === apple.x && h.y === apple.y;
+  const body = eat ? snake : snake.slice(0, -1);
+  if (h.x < 0 || h.y < 0 || h.x >= N || h.y >= N || body.some(s => s.x === h.x && s.y === h.y)) {
+    return gameOver('Game Over');
+  }
+  snake.unshift(h);
+  if (eat) {
+    score += 10;
+    scoreEl.textContent = score;
+    if (snake.length === N * N) return gameOver('You Win!');
+    placeApple();
+  } else {
+    snake.pop();
+  }
+  draw();
+  timer = setTimeout(step, Math.max(70, 130 - score / 5)); // speeds up as you score
+}
+
+function gameOver(title) {
+  state = 'over';
+  clearTimeout(timer);
+  if (score > best) {
+    best = score;
+    bestEl.textContent = best;
+    try { localStorage.setItem('snakeBest', best); } catch (e) {}
+  }
+  draw();
+  overlay(title, 'Score ' + score + ' · Space to restart');
+}
+
+function draw() {
+  // background + grid lines
+  ctx.fillStyle = '#161d26';
+  ctx.fillRect(0, 0, W, W);
+  ctx.strokeStyle = '#2b3645';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let i = 0; i <= N; i++) {
+    const p = Math.min(i * S + 0.5, W - 0.5);
+    ctx.moveTo(p, 0); ctx.lineTo(p, W);
+    ctx.moveTo(0, p); ctx.lineTo(W, p);
+  }
+  ctx.stroke();
+
+  // apple (circle)
+  const ax = (apple.x + 0.5) * S, ay = (apple.y + 0.5) * S;
+  ctx.fillStyle = '#ff4d4d';
+  ctx.beginPath(); ctx.arc(ax, ay, S * 0.38, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,.35)';
+  ctx.beginPath(); ctx.arc(ax - S * 0.12, ay - S * 0.12, S * 0.1, 0, Math.PI * 2); ctx.fill();
+
+  // snake: one smooth rounded line through the cell centers
+  const pts = snake.map(s => ({ x: (s.x + 0.5) * S, y: (s.y + 0.5) * S }));
+  const mid = (a, b) => [(a.x + b.x) / 2, (a.y + b.y) / 2];
+  ctx.lineCap = ctx.lineJoin = 'round';
+  ctx.lineWidth = S * 0.72;
+  ctx.strokeStyle = '#4ade80';
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x, pts[0].y);
+  ctx.lineTo(...mid(pts[0], pts[1]));
+  for (let i = 1; i < pts.length - 1; i++) {
+    ctx.quadraticCurveTo(pts[i].x, pts[i].y, ...mid(pts[i], pts[i + 1]));
+  }
+  ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
+  ctx.stroke();
+
+  // eyes
+  const hd = pts[0], px = -dir.y, py = dir.x;
+  for (const side of [-1, 1]) {
+    const ex = hd.x + dir.x * S * 0.12 + px * side * S * 0.2;
+    const ey = hd.y + dir.y * S * 0.12 + py * side * S * 0.2;
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(ex, ey, S * 0.11, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#111';
+    ctx.beginPath(); ctx.arc(ex + dir.x * S * 0.03, ey + dir.y * S * 0.03, S * 0.055, 0, Math.PI * 2); ctx.fill();
+  }
+}
+
+function overlay(title, sub) {
+  ctx.fillStyle = 'rgba(15,20,25,.72)';
+  ctx.fillRect(0, 0, W, W);
+  ctx.fillStyle = '#fff';
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 32px system-ui, sans-serif';
+  ctx.fillText(title, W / 2, W / 2 - 8);
+  ctx.font = '16px system-ui, sans-serif';
+  ctx.fillText(sub, W / 2, W / 2 + 24);
+}
+
+addEventListener('keydown', e => {
+  const k = e.key.toLowerCase();
+  if (k === ' ') { e.preventDefault(); if (state !== 'running') start(); return; }
+  const d = KEYS[k];
+  if (!d) return;
+  e.preventDefault();                       // stops arrow keys scrolling the page
+  if (state === 'ready') start();
+  if (state !== 'running') return;
+  const last = queue.length ? queue[queue.length - 1] : dir;
+  const opposite = d[0] === -last.x && d[1] === -last.y;
+  const same = d[0] === last.x && d[1] === last.y;
+  if (queue.length < 2 && !opposite && !same) queue.push({ x: d[0], y: d[1] });
+});
+
+reset();
+draw();
+overlay('Snake', 'Press Space or an arrow key');
+</script>
+</body>
+</html>

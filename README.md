@@ -1,4 +1,7 @@
 # snake-unblocked
+
+runs smooth 60fps 
+
 Settings button: the ⚙ button above the board opens the panel. The game pauses while it's open and resumes when you click Done (or press Esc).
 
 Start speed slider: slide left for the slowest start (130 ms) and right for the fastest (70 ms). Lower milliseconds means a faster snake.

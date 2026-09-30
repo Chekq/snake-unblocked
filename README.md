@@ -6,7 +6,7 @@ Settings button: the ⚙ button above the board opens the panel. The game pauses
 
 Start speed slider: slide left for the slowest start (130 ms) and right for the fastest (70 ms). Lower milliseconds means a faster snake.
 
-Speed scaling: the snake speeds up from your chosen start speed with every apple. The options are Off, Slow (1 ms per apple), Normal (2 ms, same as before) and Fast (4 ms).
+Speed scaling: the snake speeds up from your chosen start speed with every apple. The options are Off, Slow (1 ms per apple), Normal (2 ms ) and Fast (4 ms).
 
 Snake color: pick a preset color or use the color wheel at the end of the row for any color you want.
 Saved settings: your choices are stored in your browser, so they're still there next time you visit.

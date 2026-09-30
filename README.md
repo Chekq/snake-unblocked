@@ -1,4 +1,9 @@
 # snake-unblocked
+Settings button: the ⚙ button above the board opens the panel. The game pauses while it's open and resumes when you click Done (or press Esc).
 
-Rules: each apple is worth 10 points, hitting a wall or yourself ends the game, and the snake speeds up as you score. Your best score is saved in the browser.
-Easy tweaks: change N for a bigger or smaller grid, 130 for the starting speed (lower is faster), and 70 for the top speed.
+Start speed slider: slide left for the slowest start (130 ms) and right for the fastest (70 ms). Lower milliseconds means a faster snake.
+
+Speed scaling: the snake speeds up from your chosen start speed with every apple. The options are Off, Slow (1 ms per apple), Normal (2 ms, same as before) and Fast (4 ms).
+
+Snake color: pick a preset color or use the color wheel at the end of the row for any color you want.
+Saved settings: your choices are stored in your browser, so they're still there next time you visit.

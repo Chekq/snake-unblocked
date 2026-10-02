@@ -1,6 +1,6 @@
 # snake-unblocked
 
-clink link in top right to open
+clink link in top/middle right to open
 
  60fps 
 

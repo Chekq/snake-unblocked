@@ -1,5 +1,7 @@
 # snake-unblocked
 
+clink link in top right to open
+
  60fps 
 
 Settings button: the ⚙ button above the board opens the panel. The game pauses while it's open and resumes when you click Done (or press Esc).
